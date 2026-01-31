@@ -56,7 +56,7 @@ inductive Satisfies (lts : LTS State Label) : State → Proposition Label → Pr
 abbrev theory (s : State) (lts : LTS State Label) : Set (Proposition Label) :=
   {a | Satisfies lts s a}
 
-abbrev theoryEq (lts : LTS State Label) (s1 s2 : State) := theory s1 lts = theory s2 lts
+abbrev TheoryEq (lts : LTS State Label) (s1 s2 : State) := theory s1 lts = theory s2 lts
 
 /-- Denotation of a proposition. -/
 @[simp, scoped grind =]
@@ -77,20 +77,36 @@ theorem satisfies_mem_denotation {lts : LTS State Label} :
     Satisfies lts s a ↔ s ∈ a.denotation lts := by
   induction a generalizing s <;> grind
 
-lemma not_theoryEq_satisfies (h : ¬(theoryEq lts) s1 s2) :
-    ∃ a, Satisfies lts s1 a ∧ ¬Satisfies lts s2 a :=
-  sorry
+-- TODO Make this grind-friendly
+theorem theoryEq_denotation_eq {lts : LTS State Label} :
+    TheoryEq lts s1 s2 ↔
+    (∀ a : Proposition Label, s1 ∈ a.denotation lts ↔ s2 ∈ a.denotation lts) := by
+  apply Iff.intro <;> intro h
+  · intro a
+    apply Iff.intro <;> intro hmem
+    · have : a ∈ theory s1 lts := by grind
+      grind
+    · have : a ∈ theory s1 lts := by grind
+      grind
+  · grind
+
+/-- If two states are not theory equivalent, there exists a distinguishing formula. -/
+lemma not_theoryEq_satisfies (h : ¬(TheoryEq lts) s1 s2) :
+    ∃ a, (Satisfies lts s1 a ∧ ¬Satisfies lts s2 a) ∨
+    (¬Satisfies lts s1 a ∧ Satisfies lts s2 a) := by grind
 
 @[scoped grind ⇒]
 lemma theoryEq_isBisimulation (lts : LTS State Label)
     [image_finite : ∀ s μ, Finite (lts.image s μ)] :
-    lts.IsBisimulation (theoryEq lts) := by
+    lts.IsBisimulation (TheoryEq lts) := by
   intro s1 s2 h μ
   constructor
   case left =>
     intro s1' htr
     by_contra hnex
     simp [not_exists] at hnex
+    have hft : Finite (lts.image s2 μ) := by grind
+    let f := Fintype.ofFinite (lts.image s2 μ)
     -- Gotta build a bound n and a map of distinguishable propositions/witnesses:
     -- f i -> s2_i, a_i such that s2 -μ-> s2_i x s2_i ⊨ a_i x s1' doesn't
     -- now build d = [μ] V_i a_i
@@ -134,10 +150,10 @@ lemma bisimulation_satisfies {lts : LTS State Label} {hrb : lts.IsBisimulation r
   case box μ a ih => grind
 
 -- @[scoped grind ]
-lemma bisimulation_theoryEq {lts : LTS State Label} {hrb : lts.IsBisimulation r}
+lemma bisimulation_TheoryEq {lts : LTS State Label} {hrb : lts.IsBisimulation r}
     (hr : r s1 s2) :
-    theoryEq lts s1 s2 := by
-  unfold theoryEq theory
+    TheoryEq lts s1 s2 := by
+  unfold TheoryEq theory
   ext a
   apply Iff.intro <;> intro h
   case mp =>
@@ -149,13 +165,13 @@ lemma bisimulation_theoryEq {lts : LTS State Label} {hrb : lts.IsBisimulation r}
 
 theorem theoryEq_eq_bisimilarity (lts : LTS State Label)
     [image_finite : ∀ s μ, Finite (lts.image s μ)] :
-    theoryEq lts = Bisimilarity lts := by
+    TheoryEq lts = Bisimilarity lts := by
   ext s1 s2
   apply Iff.intro <;> intro h
-  · exists theoryEq lts
+  · exists TheoryEq lts
     grind
   · obtain ⟨r, hr, hrb⟩ := h
-    apply bisimulation_theoryEq hr
+    apply bisimulation_TheoryEq hr
     exact hrb
 
 end Cslib.Logic.HML
