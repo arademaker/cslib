@@ -15,6 +15,30 @@ public import Cslib.Foundations.Semantics.LTS.Bisimulation
 Hennessy-Milner Logic (HML) is a logic for reasoning about the behaviour of nondeterministic and
 concurrent systems.
 
+## Implementation notes
+There are two main versions of HML. The original [Hennessy1985], which includes a negation
+connective, and a variation without negation, for example as in [Aceto1999].
+We follow the latter, which is used in many recent papers. Negation is recovered as usual, by having
+a `false` atomic proposition and a function that, given any proposition, returns its negated form
+(see `Proposition.neg`).
+
+## Main definitions
+
+- `Proposition`: the language of propositions.
+- `Satisfies lts s a`: in the LTS `lts`, the state `s` satisfies the proposition `a`.
+- `denotation a`: the denotation of a proposition `a`, defined as the set of states that
+satisfy `a`.
+- `theory lts s`: the set of all propositions satisfied by state `s` in the LTS `lts`.
+
+## Main statements
+
+- `satisfies_mem_denotation`: the denotational semantics of HML is correct, in the sense that it
+coincides with the notion of satisfiability.
+- `not_theoryEq_satisfies`: if two states have different theories, then there exists a
+distinguishing proposition that one state satisfies and the other does not.
+- `theoryEq_eq_bisimilarity`: two states have the same theory iff they are bisimilar
+(see `Bisimilarity`).
+
 ## References
 
 * [M. Hennessy, R. Milner, *Algebraic Laws for Nondeterminism and Concurrency*][Hennessy1985]
@@ -54,7 +78,8 @@ def Proposition.finiteAnd (as : List (Proposition Label)) : Proposition Label :=
 def Proposition.finiteOr (as : List (Proposition Label)) : Proposition Label :=
   List.foldr .or .false as
 
-/-- Satisfaction relation. -/
+/-- Satisfaction relation. `Satisfies lts s a` means that, in the LTS `lts`, the state `s` satisfies
+the proposition `a`. -/
 @[scoped grind]
 inductive Satisfies (lts : LTS State Label) : State → Proposition Label → Prop where
   | true {s : State} : Satisfies lts s .true
@@ -84,11 +109,12 @@ def Proposition.denotation (a : Proposition Label) (lts : LTS State Label)
   | .box μ a => {s | ∀ s', lts.Tr s μ s' → s' ∈ a.denotation lts}
 
 /-- The theory of a state is the set of all propositions that it satifies. -/
-abbrev theory (s : State) (lts : LTS State Label) : Set (Proposition Label) :=
+abbrev theory (lts : LTS State Label) (s : State) : Set (Proposition Label) :=
   {a | Satisfies lts s a}
 
+/-- Two states are theory-equivalent (for a specific LTS) if they have the same theory. -/
 abbrev TheoryEq (lts : LTS State Label) (s1 s2 : State) :=
-  theory s1 lts = theory s2 lts
+  theory lts s1 = theory lts s2
 
 open Proposition LTS Bisimulation Simulation
 
@@ -98,10 +124,13 @@ theorem satisfies_mem_denotation {lts : LTS State Label} :
     Satisfies lts s a ↔ s ∈ a.denotation lts := by
   induction a generalizing s <;> grind
 
--- @[scoped grind =]
-theorem neg_satisfies {lts : LTS State Label} : Satisfies lts s a ↔ ¬Satisfies lts s a.neg := by
+/-- A state satisfies a proposition iff it does not satisfy the negation of the proposition. -/
+theorem neg_satisfies {lts : LTS State Label} :
+    Satisfies lts s a ↔ ¬Satisfies lts s a.neg := by
   induction a generalizing s <;> grind
 
+/-- A state is in the denotation of a proposition iff it is not in the denotation of the negation
+of the proposition. -/
 @[scoped grind =]
 theorem neg_denotation {lts : LTS State Label} (a : Proposition Label) :
     s ∈ a.denotation lts ↔ s ∉ a.neg.denotation lts := by
@@ -121,31 +150,26 @@ theorem satisfies_finiteOr {lts : LTS State Label} {s : State}
     Satisfies lts s (Proposition.finiteOr as) ↔ ∃ a ∈ as, Satisfies lts s a := by
   induction as <;> grind
 
--- TODO Make this grind-friendly
--- @[scoped grind ⇒]
--- theorem theoryEq_denotation_eq {lts : LTS State Label}
---     (h : TheoryEq lts s1 s2) (a : Proposition Label) :
---     s1 ∈ a.denotation lts ↔ s2 ∈ a.denotation lts := by sorry
-
--- theorem
+/-- Two states are theory-equivalent iff they are denotationally equivalent. -/
 theorem theoryEq_denotation_eq {lts : LTS State Label} :
     TheoryEq lts s1 s2 ↔
     (∀ a : Proposition Label, s1 ∈ a.denotation lts ↔ s2 ∈ a.denotation lts) := by
   apply Iff.intro <;> intro h
   · intro a
     apply Iff.intro <;> intro hmem
-    · have : a ∈ theory s1 lts := by grind
+    · have : a ∈ theory lts s1 := by grind
       grind
-    · have : a ∈ theory s1 lts := by grind
+    · have : a ∈ theory lts s1 := by grind
       grind
   · grind
 
-/-- If two states are not theory equivalent, there exists a distinguishing formula. -/
+/-- If two states are not theory equivalent, there exists a distinguishing proposition. -/
 lemma not_theoryEq_satisfies (h : ¬(TheoryEq lts) s1 s2) :
     ∃ a, (Satisfies lts s1 a ∧ ¬Satisfies lts s2 a) := by
   grind [neg_satisfies]
 
-/-- Helper: transfer satisfaction via theory equality. -/
+/-- If two states are theory equivalent and the former satisfies a proposition, the latter does as
+well. -/
 theorem theoryEq_satisfies {lts : LTS State Label} (h : TheoryEq lts s1 s2)
     (hs : Satisfies lts s1 a) : Satisfies lts s2 a := by
   unfold TheoryEq theory at h
@@ -154,7 +178,7 @@ theorem theoryEq_satisfies {lts : LTS State Label} (h : TheoryEq lts s1 s2)
 
 /-- Theory equivalence is a bisimulation. -/
 @[scoped grind ⇒]
-lemma theoryEq_isBisimulation (lts : LTS State Label)
+theorem theoryEq_isBisimulation (lts : LTS State Label)
     [image_finite : ∀ s μ, Finite (lts.image s μ)] :
     lts.IsBisimulation (TheoryEq lts) := by
   intro s1 s2 h μ
@@ -233,6 +257,8 @@ lemma theoryEq_isBisimulation (lts : LTS State Label)
     have := hsat (dist_formula s1''_sub) hmem
     exact (hdist_spec s1''_sub).2 this
 
+/-- If two states are in a bisimulation and the former satisfies a proposition, the latter does as
+well. -/
 @[scoped grind ⇒]
 lemma bisimulation_satisfies {lts : LTS State Label}
     {hrb : lts.IsBisimulation r}
@@ -268,6 +294,7 @@ lemma bisimulation_TheoryEq {lts : LTS State Label}
     obtain ⟨r', hr', hr'b⟩ := hbs
     grind
 
+/-- Theory equivalence and bisimilarity coincide for image-finite LTSs. -/
 theorem theoryEq_eq_bisimilarity (lts : LTS State Label)
     [image_finite : ∀ s μ, Finite (lts.image s μ)] :
     TheoryEq lts = Bisimilarity lts := by
@@ -278,6 +305,5 @@ theorem theoryEq_eq_bisimilarity (lts : LTS State Label)
   · obtain ⟨r, hr, hrb⟩ := h
     apply bisimulation_TheoryEq hr
     exact hrb
-
 
 end Cslib.Logic.HML
